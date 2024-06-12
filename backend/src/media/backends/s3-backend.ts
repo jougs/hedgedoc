@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2024 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
@@ -11,7 +11,6 @@ import mediaConfiguration, { MediaConfig } from '../../config/media.config';
 import { MediaBackendError } from '../../errors/errors';
 import { ConsoleLoggerService } from '../../logger/console-logger.service';
 import { MediaBackend } from '../media-backend.interface';
-import { BackendData } from '../media-upload.entity';
 import { BackendType } from './backend-type.enum';
 
 @Injectable()
@@ -25,10 +24,10 @@ export class S3Backend implements MediaBackend {
     private mediaConfig: MediaConfig,
   ) {
     this.logger.setContext(S3Backend.name);
-    if (mediaConfig.backend.use !== BackendType.S3) {
+    if (this.mediaConfig.backend.use !== BackendType.S3) {
       return;
     }
-    this.config = mediaConfig.backend.s3;
+    this.config = this.mediaConfig.backend.s3;
     const url = new URL(this.config.endPoint);
     const isSecure = url.protocol === 'https:';
     this.client = new Client({
@@ -37,6 +36,8 @@ export class S3Backend implements MediaBackend {
       useSSL: isSecure,
       accessKey: this.config.accessKeyId,
       secretKey: this.config.secretAccessKey,
+      pathStyle: this.config.pathStyle,
+      region: this.config.region,
     });
   }
 
@@ -45,38 +46,33 @@ export class S3Backend implements MediaBackend {
     return isNaN(port) ? undefined : port;
   }
 
-  async saveFile(
-    buffer: Buffer,
-    fileName: string,
-  ): Promise<[string, BackendData]> {
+  async saveFile(uuid: string, buffer: Buffer): Promise<null> {
     try {
-      await this.client.putObject(this.config.bucket, fileName, buffer);
-      this.logger.log(`Uploaded file ${fileName}`, 'saveFile');
-      return [this.getUrl(fileName), null];
+      await this.client.putObject(this.config.bucket, uuid, buffer);
+      this.logger.log(`Uploaded file ${uuid}`, 'saveFile');
+      return null;
     } catch (e) {
       this.logger.error((e as Error).message, (e as Error).stack, 'saveFile');
-      throw new MediaBackendError(`Could not save '${fileName}' on S3`);
+      throw new MediaBackendError(`Could not save file ${uuid} on S3`);
     }
   }
 
-  async deleteFile(fileName: string): Promise<void> {
+  async deleteFile(uuid: string, _: unknown): Promise<void> {
     try {
-      await this.client.removeObject(this.config.bucket, fileName);
-      const url = this.getUrl(fileName);
-      this.logger.log(`Deleted ${url}`, 'deleteFile');
-      return;
+      await this.client.removeObject(this.config.bucket, uuid);
+      this.logger.log(`Deleted uploaded file ${uuid}`, 'deleteFile');
     } catch (e) {
-      this.logger.error((e as Error).message, (e as Error).stack, 'saveFile');
-      throw new MediaBackendError(`Could not delete '${fileName}' on S3`);
+      this.logger.error((e as Error).message, (e as Error).stack, 'deleteFile');
+      throw new MediaBackendError(`Could not delete '${uuid}' on S3`);
     }
   }
 
-  private getUrl(fileName: string): string {
-    const url = new URL(this.config.endPoint);
-    if (!url.pathname.endsWith('/')) {
-      url.pathname += '/';
+  async getFileUrl(uuid: string, _: unknown): Promise<string> {
+    try {
+      return await this.client.presignedGetObject(this.config.bucket, uuid);
+    } catch (e) {
+      this.logger.error((e as Error).message, (e as Error).stack, 'getFileUrl');
+      throw new MediaBackendError(`Could not get URL for '${uuid}' on S3`);
     }
-    url.pathname += `${this.config.bucket}/${fileName}`;
-    return url.toString();
   }
 }

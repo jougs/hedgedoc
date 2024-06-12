@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2024 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
@@ -193,7 +193,7 @@ describe('MediaService', () => {
           },
         );
       const upload = await service.saveFile(testImage, user, note);
-      expect(upload.fileUrl).toEqual(fileId);
+      expect(upload.fileName).toEqual(fileId);
     });
 
     describe('fails:', () => {

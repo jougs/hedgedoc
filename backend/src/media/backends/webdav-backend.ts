@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2024 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
@@ -11,14 +11,13 @@ import mediaConfiguration, { MediaConfig } from '../../config/media.config';
 import { MediaBackendError } from '../../errors/errors';
 import { ConsoleLoggerService } from '../../logger/console-logger.service';
 import { MediaBackend } from '../media-backend.interface';
-import { BackendData } from '../media-upload.entity';
 import { BackendType } from './backend-type.enum';
 
 @Injectable()
 export class WebdavBackend implements MediaBackend {
   private config: MediaConfig['backend']['webdav'];
   private authHeader: string;
-  private baseUrl: string;
+  private readonly baseUrl: string;
 
   constructor(
     private readonly logger: ConsoleLoggerService,
@@ -26,11 +25,10 @@ export class WebdavBackend implements MediaBackend {
     private mediaConfig: MediaConfig,
   ) {
     this.logger.setContext(WebdavBackend.name);
-    if (mediaConfig.backend.use === BackendType.WEBDAV) {
-      this.config = mediaConfig.backend.webdav;
+    if (this.mediaConfig.backend.use === BackendType.WEBDAV) {
+      this.config = this.mediaConfig.backend.webdav;
       const url = new URL(this.config.connectionString);
-      const port = url.port !== '' ? `:${url.port}` : '';
-      this.baseUrl = `${url.protocol}//${url.hostname}${port}${url.pathname}`;
+      this.baseUrl = url.toString();
       if (this.config.uploadDir && this.config.uploadDir !== '') {
         this.baseUrl = WebdavBackend.joinURL(
           this.baseUrl,
@@ -60,13 +58,10 @@ export class WebdavBackend implements MediaBackend {
     }
   }
 
-  async saveFile(
-    buffer: Buffer,
-    fileName: string,
-  ): Promise<[string, BackendData]> {
+  async saveFile(uuid: string, buffer: Buffer): Promise<null> {
     try {
       const contentLength = buffer.length;
-      await fetch(WebdavBackend.joinURL(this.baseUrl, '/', fileName), {
+      await fetch(WebdavBackend.joinURL(this.baseUrl, '/', uuid), {
         method: 'PUT',
         body: buffer,
         headers: {
@@ -77,34 +72,37 @@ export class WebdavBackend implements MediaBackend {
           'If-None-Match': '*', // Don't overwrite already existing files
         },
       }).then((res) => WebdavBackend.checkStatus(res));
-      this.logger.log(`Uploaded file ${fileName}`, 'saveFile');
-      return [this.getUrl(fileName), null];
+      this.logger.log(`Uploaded file ${uuid}`, 'saveFile');
+      return null;
     } catch (e) {
       this.logger.error((e as Error).message, (e as Error).stack, 'saveFile');
-      throw new MediaBackendError(`Could not save '${fileName}' on WebDav`);
+      throw new MediaBackendError(`Could not save upload '${uuid}' on WebDAV`);
     }
   }
 
-  async deleteFile(fileName: string, _: BackendData): Promise<void> {
+  async deleteFile(uuid: string, _: unknown): Promise<void> {
     try {
-      await fetch(WebdavBackend.joinURL(this.baseUrl, '/', fileName), {
+      await fetch(WebdavBackend.joinURL(this.baseUrl, '/', uuid), {
         method: 'DELETE',
         headers: {
           // eslint-disable-next-line @typescript-eslint/naming-convention
           Authorization: this.authHeader,
         },
       }).then((res) => WebdavBackend.checkStatus(res));
-      const url = this.getUrl(fileName);
-      this.logger.log(`Deleted ${url}`, 'deleteFile');
+      this.logger.log(`Deleted upload ${uuid}`, 'deleteFile');
       return;
     } catch (e) {
-      this.logger.error((e as Error).message, (e as Error).stack, 'saveFile');
-      throw new MediaBackendError(`Could not delete '${fileName}' on WebDav`);
+      this.logger.error((e as Error).message, (e as Error).stack, 'deleteFile');
+      throw new MediaBackendError(
+        `Could not delete upload '${uuid}' on WebDAV`,
+      );
     }
   }
 
-  private getUrl(fileName: string): string {
-    return WebdavBackend.joinURL(this.config.publicUrl, '/', fileName);
+  getFileUrl(uuid: string, _: unknown): Promise<string> {
+    return Promise.resolve(
+      WebdavBackend.joinURL(this.config.publicUrl, '/', uuid),
+    );
   }
 
   private static generateBasicAuthHeader(

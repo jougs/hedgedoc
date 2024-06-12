@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2024 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
@@ -11,11 +11,10 @@ import mediaConfiguration, { MediaConfig } from '../../config/media.config';
 import { MediaBackendError } from '../../errors/errors';
 import { ConsoleLoggerService } from '../../logger/console-logger.service';
 import { MediaBackend } from '../media-backend.interface';
-import { BackendData } from '../media-upload.entity';
 
 @Injectable()
 export class FilesystemBackend implements MediaBackend {
-  uploadDirectory = './uploads';
+  private readonly uploadDirectory;
 
   constructor(
     private readonly logger: ConsoleLoggerService,
@@ -23,33 +22,34 @@ export class FilesystemBackend implements MediaBackend {
     private mediaConfig: MediaConfig,
   ) {
     this.logger.setContext(FilesystemBackend.name);
-    this.uploadDirectory = mediaConfig.backend.filesystem.uploadPath;
+    this.uploadDirectory = this.mediaConfig.backend.filesystem.uploadPath;
   }
 
-  async saveFile(
-    buffer: Buffer,
-    fileName: string,
-  ): Promise<[string, BackendData]> {
-    const filePath = this.getFilePath(fileName);
-    this.logger.debug(`Writing file to: ${filePath}`, 'saveFile');
+  async saveFile(uuid: string, buffer: Buffer): Promise<null> {
+    const filePath = this.getFilePath(uuid);
+    this.logger.debug(`Writing uploaded file to '${filePath}'`, 'saveFile');
     await this.ensureDirectory();
     try {
       await fs.writeFile(filePath, buffer, null);
-      return ['/uploads/' + fileName, null];
+      return null;
     } catch (e) {
       this.logger.error((e as Error).message, (e as Error).stack, 'saveFile');
-      throw new MediaBackendError(`Could not save '${filePath}'`);
+      throw new MediaBackendError(`Could not save file '${filePath}'`);
     }
   }
 
-  async deleteFile(fileName: string, _: BackendData): Promise<void> {
-    const filePath = this.getFilePath(fileName);
+  async deleteFile(uuid: string, _: unknown): Promise<void> {
+    const filePath = this.getFilePath(uuid);
     try {
       return await fs.unlink(filePath);
     } catch (e) {
       this.logger.error((e as Error).message, (e as Error).stack, 'deleteFile');
-      throw new MediaBackendError(`Could not delete '${filePath}'`);
+      throw new MediaBackendError(`Could not delete file '${filePath}'`);
     }
+  }
+
+  getFileUrl(uuid: string, _: unknown): Promise<string> {
+    return Promise.resolve(`/uploads/${uuid}`);
   }
 
   private getFilePath(fileName: string): string {
